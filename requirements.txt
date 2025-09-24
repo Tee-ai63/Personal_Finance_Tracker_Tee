@@ -1,3 +1,4 @@
+supabase-py
 streamlit
 pandas
 matplotlib
