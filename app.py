@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 from supabase import create_client, Client
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Image
 from reportlab.lib.styles import getSampleStyleSheet
+from io import BytesIO
 
 # --- Supabase Setup ---
-# Read values securely from Streamlit secrets
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -17,7 +17,7 @@ def add_record(record_type, category, amount):
     """Insert a new transaction into Supabase"""
     date = datetime.now().strftime("%Y-%m-%d")
     data = {"date": date, "type": record_type, "category": category, "amount": float(amount)}
-    response = supabase.table("transactions").insert(data).execute()
+    response = supabase.table("transactions").insert(data, returning="representation").execute()
     return response
 
 def fetch_transactions(start_date=None, end_date=None):
@@ -51,11 +51,12 @@ def create_pie_chart(total_income, total_expense, total_savings):
     return fig
 
 def export_to_pdf(summary, transactions, fig=None):
-    """Export finance summary + transactions + chart to PDF"""
-    filename = f"finance_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-    doc = SimpleDocTemplate(filename)
+    """Export finance summary + transactions + chart to PDF in memory"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer)
     styles = getSampleStyleSheet()
     elements = []
+
     total_income, total_expense, total_savings, balance = summary
 
     elements.append(Paragraph("Personal Finance Summary", styles["Title"]))
@@ -66,12 +67,15 @@ def export_to_pdf(summary, transactions, fig=None):
     elements.append(Paragraph(f"Balance: {balance}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
+    # Add chart in memory
     if fig:
-        chart_filename = "pie_chart.png"
-        fig.savefig(chart_filename)
-        elements.append(Image(chart_filename, width=400, height=300))
+        chart_buf = BytesIO()
+        fig.savefig(chart_buf, format="png")
+        chart_buf.seek(0)
+        elements.append(Image(chart_buf, width=400, height=300))
         elements.append(Spacer(1, 12))
 
+    # Add transactions table
     if not transactions.empty:
         table_data = [["Date", "Type", "Category", "Amount"]] + transactions.values.tolist()
         elements.append(Table(table_data))
@@ -79,7 +83,8 @@ def export_to_pdf(summary, transactions, fig=None):
         elements.append(Paragraph("No transactions available.", styles["Normal"]))
 
     doc.build(elements)
-    return filename
+    buffer.seek(0)
+    return buffer
 
 # --- Streamlit UI ---
 st.title("Personal Finance Tracker (Supabase + PDF)")
@@ -133,9 +138,14 @@ if st.button("Show Summary & Transactions"):
         df = pd.DataFrame(rows)[["date", "type", "category", "amount"]]
         st.dataframe(df, use_container_width=True)
 
-        if st.button("Export to PDF"):
-            pdf_file = export_to_pdf((total_income, total_expense, total_savings, balance), df, fig)
-            with open(pdf_file, "rb") as f:
-                st.download_button("Download PDF", f, file_name=pdf_file)
+        # PDF Download Button
+        pdf_buffer = export_to_pdf((total_income, total_expense, total_savings, balance), df, fig)
+        st.download_button(
+            label="Download PDF",
+            data=pdf_buffer,
+            file_name="finance_summary.pdf",
+            mime="application/pdf"
+        )
     else:
         st.info("No transactions to display.")
+
