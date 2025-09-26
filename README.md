@@ -2,6 +2,8 @@
 
 A simple and intuitive personal finance tracker app to help you manage your expenses, track your income, and visualize your financial health.
 
+Read more on : https://hashnode.com/edit/cmfzicmpa000202jz7vlp2hkk
+
 ---
 
 ## Features
